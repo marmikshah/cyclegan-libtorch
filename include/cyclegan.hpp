@@ -1,6 +1,7 @@
 #ifndef ARTIUM_CYCLEGAN_HPP
 #define ARTIUM_CYCLEGAN_HPP
 
+#include "blocks.hpp"
 #include "globals.hpp"
 
 namespace CycleGAN {
@@ -11,23 +12,37 @@ namespace CycleGAN {
     return torch::mean((real - 1) * (real - 1)) + torch::mean(fake * fake);
   }
 
+  torch::Tensor generatorLoss(torch::Tensor fake) { return torch::mean((fake - 1) * (fake - 1)); }
+
   struct Discriminator : Module {
     Sequential block{nullptr};
-    Discriminator(int nc = 3, int ndf = 64) {
+    Discriminator(int inChannels = 3, int ndf = 64, int numLayers = 3) {
+      /**
+       * Initialize Discriminator Network
+       *
+       * @param inChannels Number of channels in the input images
+       * @param ndf Number of filters in the last conv layer
+       * @param numLayers Number of conv layers in the network
+       */
+
       Sequential layers = Sequential();
-      layers->push_back(Conv2d(getConv2dOptions(nc, ndf, 4, 2, 1, false)));
-      layers->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
-      layers->push_back(Conv2d(getConv2dOptions(ndf, ndf * 2, 4, 2, 1, false)));
-      layers->push_back(InstanceNorm2d(ndf * 2));
-      layers->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+      torch::ExpandingArray<2UL> kernel(4);
+      int padding = 1;
 
-      layers->push_back(Conv2d(getConv2dOptions(ndf * 2, ndf * 4, 4, 2, 1, false)));
-      layers->push_back(InstanceNorm2d(0.2));
-      layers->push_back(Conv2d(getConv2dOptions(ndf * 4, ndf * 8, 4, 1, 1)));
-      layers->push_back(InstanceNorm2d(ndf * 8));
-      layers->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-      layers->push_back(Conv2d(getConv2dOptions(ndf * 8, 1, 4, 1, 1)));
+      layers->push_back(Conv2d(Conv2dOptions(inChannels, ndf, kernel).stride(2)));
+      layers->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2)));
+
+      int multiplier = 1, multiplierPrev = 1;
+      for (int i = 1; i <= numLayers; i++) {
+        multiplierPrev = multiplier;
+        multiplier = min(1 << i, 8);
+        layers->push_back(Conv2d(Conv2dOptions(ndf * multiplierPrev, ndf * multiplier, kernel).stride(2).padding(2)));
+        layers->push_back(InstanceNorm2d(ndf * multiplier));
+        layers->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+      }
+
+      layers->push_back(Conv2d(Conv2dOptions(ndf * multiplier, 1, kernel).stride(1).padding(padding)));
 
       block = register_module("block", layers);
       block->to(device);
@@ -35,65 +50,65 @@ namespace CycleGAN {
     torch::Tensor forward(torch::Tensor input) { return block->forward(input); }
   };
 
-  torch::Tensor generatorLoss(torch::Tensor fake) { return torch::mean((fake - 1) * (fake - 1)); }
-
-  struct ResidualBlock : Module {
-    Sequential conv{nullptr};
-    InstanceNorm2d norm{nullptr};
-
-    ResidualBlock(int features) {
-      Conv2dOptions options = getConv2dOptions(features, features, 3, 1, 1);
-
-      Sequential block = Sequential();
-      block->push_back(Conv2d(options));
-      block->push_back(InstanceNorm2d(features));
-      block->push_back(ReLU());
-      block->push_back(Conv2d(options));
-
-      conv = register_module("conv", block);
-      conv->to(device);
-      norm = register_module("norm", InstanceNorm2d(features));
-      norm->to(device);
-    }
-
-    torch::Tensor forward(torch::Tensor x) { return torch::relu(this->norm->forward(this->conv->forward(x) + x)); }
-  };
-
   struct Generator : Module {
     Sequential layers{nullptr};
 
-    Generator(int features = 64, int blocks = 6) {
+    Generator(int inChannels, int outChannels, int ngf = 64, int numBlocks = 6, bool useBias = false) {
+      /**
+       * Initialise a Generater Network.
+       * @param inChannels Number of channels of input image (3 for Color Image and 1 for Grayscale)
+       * @param outChannles Number of channels of outpit image (3 for Color Image and 1 for Grayscale)
+       * @param nfg Number of filters in the last convolution layer
+       * @param numBlocks Number of Residual blocks in the network.
+       */
+
       Sequential network = Sequential();
 
+#pragma region encoder
+
       network->push_back(ReflectionPad2d(3));
-      network->push_back(Conv2d(getConv2dOptions(3, features, 7, 1, 0)));
-      network->push_back(InstanceNorm2d(2));
-      network->push_back(ReLU(true));
-      network->push_back(Conv2d(getConv2dOptions(features, 2 * features, 3, 2, 1)));
-      network->push_back(InstanceNorm2d(2 * features));
-      network->push_back(ReLU(true));
-      network->push_back(Conv2d(getConv2dOptions(2 * features, 4 * features, 3, 2, 1)));
-      network->push_back(InstanceNorm2d(2));
+      network->push_back(Conv2d(Conv2dOptions(inChannels, ngf, 7).padding(0).bias(useBias)));
+      network->push_back(InstanceNorm2d(ngf));
       network->push_back(ReLU(true));
 
-      for (int i = 0; i < blocks; ++i) {
-        ResidualBlock block(4 * features);
+      int totalDownsamplingLayers = 2;
+      int multiplier = 0;
+      for (int i = 0; i < totalDownsamplingLayers; i++) {
+        multiplier = 1 << i;
+        int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier * 2;
+        network->push_back(Conv2d(Conv2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).bias(useBias)));
+        network->push_back(InstanceNorm2d(outFeatures));
+        network->push_back(ReLU(true));
+      }
+
+#pragma endregion
+
+#pragma region transformer
+
+      multiplier = 1 << totalDownsamplingLayers;
+      std::cout << "Creating " << numBlocks << "resnet blocks" << std::endl;
+      for (int i = 0; i < numBlocks; ++i) {
+        ResidualBlock block(ngf * multiplier);
         network->push_back(block);
       }
 
-      network->push_back(createConvTranspose2d(4 * features, 4 * 2 * features, 3, 1, 1));
-      network->push_back(PixelShuffle(2));
-      network->push_back(InstanceNorm2d(2 * features));
-      network->push_back(ReLU(true));
+#pragma endregion
 
-      network->push_back(createConvTranspose2d(2 * features, 4 * features, 3, 1, 1));
-      network->push_back(PixelShuffle(2));
-      network->push_back(InstanceNorm2d(2 * features));
-      network->push_back(ReLU(true));
+#pragma region decoder
+      // Upsampling layers
+      for (int i = 0; i < totalDownsamplingLayers; i++) {
+        multiplier = 1 << (totalDownsamplingLayers - i);
+        int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier / 2;
+        network->push_back(ConvTranspose2d(
+            ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1).bias(useBias)));
+        network->push_back(InstanceNorm2d(outFeatures));
+        network->push_back(ReLU(true));
+      }
 
       network->push_back(ReflectionPad2d(3));
-      network->push_back(Conv2d(getConv2dOptions(features, 3, 7, 1, 0)));
+      network->push_back(Conv2d(Conv2dOptions(ngf, outChannels, 7).padding(0)));
       network->push_back(Tanh());
+#pragma endregion
 
       layers = register_module("layers", network);
       layers->to(device);
