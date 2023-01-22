@@ -64,6 +64,13 @@
         "streambuf": "cpp",
         "thread": "cpp",
         "typeindex": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "filesystem": "cpp",
+        "bitset": "cpp",
+        "codecvt": "cpp",
+        "iomanip": "cpp",
+        "shared_mutex": "cpp",
+        "valarray": "cpp",
+        "variant": "cpp"
     },
 }

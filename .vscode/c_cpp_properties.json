@@ -5,7 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/opt/libs/libtorch/include",
-                "/opt/libs/libtorch/include/torch/csrc/api/include"
+                "/opt/libs/libtorch/include/torch/csrc/api/include",
+                "/usr/local/include/opencv4/opencv2/"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
