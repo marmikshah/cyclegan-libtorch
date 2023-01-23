@@ -36,14 +36,29 @@ WORKDIR /opt/libs/opencv/build/
 RUN cmake .. && make -j8
 
 
-FROM base
+FROM base as cpp
 
 COPY --from=libtorch /opt/libs/libtorch/ /opt/libs/libtorch/
 COPY --from=libtorch /opt/libs/vision/ /opt/libs/vision/
 COPY --from=opencv /opt/libs/opencv/ /opt/libs/opencv/
 
 RUN cd /opt/libs/vision/build/ && make install
-RUN cd /opt/libs/vision/build/ && make install
+RUN cd /opt/libs/opencv/build/ && make install
+
+ARG USER=marmikshah
+
+RUN addgroup --gid 1000 ${USER}
+RUN adduser --disabled-password --gecos '' --uid 1000 --gid 1000 ${USER}
+
+USER ${USER}
+
+FROM base as python
+
+RUN apt install -y python3-pip
+RUN pip3 install --upgrade pip && \
+    pip3 install torch torchvision opencv-python pillow jupyter
+
+RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
 
 ARG USER=marmikshah
 
