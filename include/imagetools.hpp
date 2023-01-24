@@ -5,12 +5,11 @@
 
 #include "globals.hpp"
 
-bool tensorToMat(torch::Tensor tensor, std::string imagePath) {
+cv::Mat tensorToMat(torch::Tensor tensor) {
   /**
-   * Convert a Tensor to OpenCV Mat and save to disk.
+   * Convert a Tensor to OpenCV Mat
    *
    * @param tensor The torch::Tensor of (c, h, w) shape
-   * @param imagePage Path where image should be written to
    */
 
   int width = tensor.sizes()[2];
@@ -19,7 +18,7 @@ bool tensorToMat(torch::Tensor tensor, std::string imagePath) {
 
   tensor = tensor.mul(255).clamp(0, 255).to(torch::kU8).to(torch::kCPU);
   cv::Mat output(width, height, CV_8UC3, tensor.data_ptr<uchar>());
-  return cv::imwrite(imagePath, output);
+  return output;
 }
 
 class ImagePool {
