@@ -8,12 +8,6 @@ namespace CycleGAN {
 
   using namespace torch::nn;
 
-  torch::Tensor discriminatorLoss(torch::Tensor real, torch::Tensor fake) {
-    return torch::mean((real - 1) * (real - 1)) + torch::mean(fake * fake);
-  }
-
-  torch::Tensor generatorLoss(torch::Tensor fake) { return torch::mean((fake - 1) * (fake - 1)); }
-
   struct Discriminator : Module {
     Sequential block{nullptr};
     Discriminator(int inChannels = 3, int ndf = 64, int numLayers = 3) {
@@ -86,8 +80,7 @@ namespace CycleGAN {
 #pragma region transformer
 
       multiplier = 1 << totalDownsamplingLayers;
-      std::cout << "Creating " << numBlocks << "resnet blocks" << std::endl;
-      for (int i = 0; i < numBlocks; ++i) {
+      for (int i = 0; i < numBlocks; i++) {
         ResidualBlock block(ngf * multiplier);
         network->push_back(block);
       }
@@ -99,8 +92,7 @@ namespace CycleGAN {
       for (int i = 0; i < totalDownsamplingLayers; i++) {
         multiplier = 1 << (totalDownsamplingLayers - i);
         int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier / 2;
-        network->push_back(ConvTranspose2d(
-            ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1).bias(useBias)));
+        network->push_back(ConvTranspose2d(ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1).bias(useBias)));
         network->push_back(InstanceNorm2d(outFeatures));
         network->push_back(ReLU(true));
       }
