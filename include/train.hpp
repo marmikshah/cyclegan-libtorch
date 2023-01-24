@@ -57,21 +57,19 @@ class Domain {
   void step() { generations.push_back(tensorToMat(fake.detach().cpu()[0].clone())); }
 
   void cleanup(std::string exportDir, std::string identifier) {
-    
     torch::serialize::OutputArchive archive;
     generator->save(archive);
     archive.save_to(exportDir + "/gen_" + identifier + ".pt");
-    
+
     std::string frameExportPath = exportDir + "/" + identifier;
-    std::cout << "Exporting " << generations.size() << " generations"<<std::endl;
+    std::cout << "Exporting " << generations.size() << " generations" << std::endl;
 
     for (int i = 0; i < generations.size(); i++) {
-      auto &mat = generations[i];
+      auto& mat = generations[i];
       std::string path = frameExportPath + std::to_string(i) + ".png";
       cv::imwrite(path, mat);
     }
   }
-
 };
 
 void train(cxxopts::ParseResult opts) {
@@ -91,10 +89,10 @@ void train(cxxopts::ParseResult opts) {
   double lambdaA = opts["lambda-a"].as<double>();
   double lambdaB = opts["lambda-b"].as<double>();
 
-  std::cout<<"------------------- Training Started -------------------"<<std::endl;
+  std::cout << "------------------- Training Started -------------------" << std::endl;
 
   for (int epoch = 0; epoch < opts["epochs"].as<int>(); epoch++) {
-    std::cout << "Epoch " << epoch <<":\t";
+    std::cout << "Epoch " << epoch << ":\t";
     for (auto& batch : *loader) {
       domainA.real = batch.data[0].unsqueeze(0);
       domainB.real = batch.data[1].unsqueeze(0);
@@ -120,8 +118,8 @@ void train(cxxopts::ParseResult opts) {
                               functional::mse_loss(domainB.discriminator->forward(domainA.fake), targetReal) +
                               (functional::l1_loss(domainA.fake, batch.data) * lambdaA) +
                               (functional::l1_loss(domainB.fake, batch.data) * lambdaB) + idtLossA + idtLossB;
-      std::cout << "Loss(G): " << genLoss.item() <<",\t";
-      genLoss.backward(); 
+      std::cout << "Loss(G): " << genLoss.item() << ",\t";
+      genLoss.backward();
       domainA.optimizerG->step();
       domainB.optimizerG->step();
 
@@ -129,17 +127,16 @@ void train(cxxopts::ParseResult opts) {
       torch::Tensor fakeB = domainB.getFakeGenerations().detach();
       std::cout << "Loss(D_A): " << domainA.trainDiscriminator(domainB.real, fakeB) << ",\t";
       std::cout << "Loss(D_B): " << domainB.trainDiscriminator(domainA.real, fakeA) << ",\t";
-      std::cout<<std::endl;
+      std::cout << std::endl;
       domainA.step();
       domainB.step();
     }
   }
-  std::cout<<"------------------- Training Complete -------------------"<<std::endl;
+  std::cout << "------------------- Training Complete -------------------" << std::endl;
   std::string exportDir = opts["export-dir"].as<std::string>();
 
   domainA.cleanup(exportDir, "A");
   domainB.cleanup(exportDir, "B");
-
 }
 
 #endif
