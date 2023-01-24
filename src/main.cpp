@@ -1,5 +1,6 @@
 #include <cxxopts.hpp>
 #include <iostream>
+
 #include "train.hpp"
 
 int main(int argc, char** argv) {
@@ -19,6 +20,7 @@ int main(int argc, char** argv) {
 
   // Training Options
   options.add_option(group, {"e,epochs", "Total epochs for training", value<int>()->default_value("500")});
+  options.add_option(group, {"b,batch-size", "Batch size", value<int>()->default_value("4")});
   options.add_option(group, {"l,learning-rate", "Learning rate", value<double>()->default_value("0.0005")});
   options.add_option(group, {"lambda-identity", "Identity loss", value<double>()->default_value("0.5")});
   options.add_option(group, {"lambda-a", "Identity loss A", value<double>()->default_value("10.0")});

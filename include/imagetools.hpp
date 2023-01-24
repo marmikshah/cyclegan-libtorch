@@ -21,6 +21,15 @@ cv::Mat tensorToMat(torch::Tensor tensor) {
   return output;
 }
 
+torch::Tensor matToTensor(std::string path, cv::Size& size, bool permute = true) {
+  cv::Mat image = cv::imread(path);
+  cv::resize(image, image, size, 0, 0, 1);
+  torch::Tensor tensor = torch::from_blob(image.data,  {image.rows, image.cols, image.channels()}, at::kByte);
+
+  if(permute) tensor = tensor.permute({2, 0, 1});
+  return tensor;
+}
+
 class ImagePool {
   /***
    * Create an ImagePool consisting of previously

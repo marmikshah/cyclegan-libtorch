@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "globals.hpp"
+#include "imagetools.hpp"
 
 namespace fs = std::filesystem;
 
@@ -16,31 +17,60 @@ void normalize(torch::Tensor& tensor) {
   tensor = (tensor - mean) / std;
 }
 
-class ImageDataset : public torch::data::datasets::Dataset<ImageDataset> {
+struct Batch {
+  torch::Tensor imagesA;
+  torch::Tensor imagesB;
+};
+
+class ImageDataset {
  private:
-  std::vector<std::string> images;
+  std::vector<std::string> imagesA;
+  std::vector<std::string> imagesB;
+  cv::Size dims;
+  int width, height;
+  bool iterationComplete = false;
+  int currentIndex = 0;
+  int batchSize;
 
  public:
-  explicit ImageDataset(std::string path) {
-    for (const auto& entry : fs::directory_iterator(path)) {
-      images.push_back(entry.path().string());
+  ImageDataset(std::string pathImagesA, std::string pathImagesB, int width, int height, int batchSize) {
+    for (const auto& entry : fs::directory_iterator(pathImagesA)) {
+      imagesA.push_back(entry.path().string());
     }
+    std::cout << "Found " << imagesA.size() << " images for Category A" << std::endl;
+    for (const auto& entry : fs::directory_iterator(pathImagesB)) {
+      imagesB.push_back(entry.path().string());
+    }
+    std::cout << "Found " << imagesB.size() << " images for Category B" << std::endl;
+    this->dims = cv::Size(width, height);
+    this->width = width;
+    this->height = height;
+    this->batchSize = batchSize;
   }
 
-  torch::data::Example<> get(size_t index) override {
-    cv::Mat image = cv::imread(images[index]);
-    cv::resize(image, image, cv::Size(256, 256), 0, 0, 1);
+  Batch* getBatch() {
+    Batch* batch = new Batch();
+    int maxSamplesInBatch = min(imagesA.size() - currentIndex, batchSize);
+    batch->imagesA = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
+    batch->imagesB = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
+    for (int i = 0; i < batchSize; i++, currentIndex++) {
+      if (i >= imagesA.size()) {
+        iterationComplete = true;
+        break;
+      }
+      batch->imagesA[i] = matToTensor(this->imagesA[currentIndex], this->dims);
 
-    torch::Tensor tensor = torch::from_blob(image.data, {image.rows, image.cols, image.channels()}, at::kByte);
-
-    tensor = tensor.permute({2, 0, 1});
-    normalize(tensor);
-    torch::Tensor label = torch::full({1}, 1);
-
-    return {tensor.to(device), label.to(device)};
+      int randomIndex = rand() % imagesB.size();
+      batch->imagesB[i] = matToTensor(this->imagesB[randomIndex], this->dims);
+    }
+    return batch;
   }
 
-  torch::optional<size_t> size() const override { return images.size(); }
+  void reset() {
+    this->currentIndex = -1;
+    this->iterationComplete = false;
+  }
+  bool isIterationComplete() { return this->iterationComplete; }
 };
 
 #endif

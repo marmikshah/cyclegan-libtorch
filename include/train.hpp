@@ -9,6 +9,8 @@
 #include "globals.hpp"
 #include "imagetools.hpp"
 
+namespace F = torch::nn::functional;
+
 class Domain {
  public:
   std::shared_ptr<CycleGAN::Generator> generator;
@@ -19,7 +21,7 @@ class Domain {
   std::vector<cv::Mat> generations;
   torch::Tensor fake, rec, real, idt;
 
-  Domain(int numBlocks, double lr) {
+  Domain(int numBlocks, double lr, int batchSize) {
     using namespace torch::nn;
     using namespace torch::optim;
     generator = std::make_shared<CycleGAN::Generator>(3, 3, 64, numBlocks);
@@ -30,22 +32,21 @@ class Domain {
     optimizerD = new Adam(discriminator->parameters(), AdamOptions().lr(lr).betas({0.5, 0.999}));
     optimizerG = new Adam(generator->parameters(), AdamOptions().lr(lr).betas({0.5, 0.999}));
 
-    pool = new ImagePool(50);
+    pool = new ImagePool(batchSize);
   }
 
   torch::Tensor generate(torch::Tensor& batch) { return generator->forward(batch); }
 
   torch::Tensor getFakeGenerations() { return pool->getImages(fake).to(device); }
 
-  torch::Scalar trainDiscriminator(torch::Tensor realBatch, torch::Tensor fakeBatch) {
+  torch::Scalar trainDiscriminator(torch::Tensor& realBatch, torch::Tensor& fakeBatch) {
     setGrad(*discriminator, true);
     optimizerD->zero_grad();
     auto predReal = discriminator->forward(realBatch);
     auto predFake = discriminator->forward(fakeBatch);
 
-    using namespace torch::nn::functional;
-    torch::Tensor lossReal = torch::nn::functional::mse_loss(predReal, torch::ones_like(predReal));
-    torch::Tensor lossFake = torch::nn::functional::mse_loss(predFake, torch::zeros_like(predFake));
+    torch::Tensor lossReal = F::mse_loss(predReal, torch::ones_like(predReal));
+    torch::Tensor lossFake = F::mse_loss(predFake, torch::zeros_like(predFake));
 
     auto loss = lossReal + lossFake * 0.5;
     loss.backward();
@@ -53,6 +54,14 @@ class Domain {
 
     return loss.item();
   }
+
+  torch::Tensor computeGeneratorLoss(torch::Tensor& input, bool isReal = true) {
+    torch::Tensor output = discriminator->forward(input);
+    torch::Tensor target = isReal ? torch::ones_like(output) : torch::zeros_like(output);
+    return F::mse_loss(output, target);
+  }
+
+  torch::Tensor computeCycleLoss(double lambda) { return F::mse_loss(rec, real) * lambda; }
 
   void step() { generations.push_back(tensorToMat(fake.detach().cpu()[0].clone())); }
 
@@ -75,13 +84,16 @@ class Domain {
 void train(cxxopts::ParseResult opts) {
   int numBlocks = opts["blocks"].as<int>();
   int learningRate = opts["learning-rate"].as<double>();
+  int width = opts["width"].as<int>();
+  int height = opts["height"].as<int>();
+  int batchSize = opts["batch-size"].as<int>();
 
-  Domain domainA(numBlocks, learningRate);
-  Domain domainB(numBlocks, learningRate);
+  Domain domainA(numBlocks, learningRate, batchSize);
+  Domain domainB(numBlocks, learningRate, batchSize);
 
   using namespace torch::data;
-  datasets::MapDataset dataset = ImageDataset(opts["dataset"].as<std::string>()).map(transforms::Stack<>());
-  std::unique_ptr loader = make_data_loader(std::move(dataset), 2);
+  std::string directory = opts["dataset"].as<std::string>();
+  ImageDataset dataset(directory + "/trainA", directory + "/trainB", width, height, batchSize);
 
   using namespace torch::nn;
 
@@ -93,9 +105,11 @@ void train(cxxopts::ParseResult opts) {
 
   for (int epoch = 0; epoch < opts["epochs"].as<int>(); epoch++) {
     std::cout << "Epoch " << epoch << ":\t";
-    for (auto& batch : *loader) {
-      domainA.real = batch.data[0].unsqueeze(0);
-      domainB.real = batch.data[1].unsqueeze(0);
+
+    while (!dataset.isIterationComplete()) {
+      Batch* batch = dataset.getBatch();
+      domainA.real = batch->imagesA.to(device);
+      domainB.real = batch->imagesB.to(device);
 
       domainB.fake = domainA.generate(domainA.real);  // G_A(A)
       domainA.rec = domainB.generate(domainB.fake);   // G_B(G_A(A))
@@ -110,27 +124,27 @@ void train(cxxopts::ParseResult opts) {
       domainA.optimizerG->zero_grad();
       domainB.optimizerG->zero_grad();
 
-      torch::Tensor targetReal = torch::ones({1, 1, 16, 16}).to(device);
+      torch::Tensor idtLossA = F::l1_loss(domainA.idt, domainB.real) * lambdaB * lambdaIdt;
+      torch::Tensor idtLossB = F::l1_loss(domainB.idt, domainA.real) * lambdaA * lambdaIdt;
+      torch::Tensor genLoss = domainA.computeGeneratorLoss(domainB.fake) + domainB.computeGeneratorLoss(domainA.fake);
+      torch::Tensor cycleLoss = domainA.computeCycleLoss(lambdaA) + domainB.computeCycleLoss(lambdaB);
 
-      torch::Tensor idtLossA = functional::l1_loss(domainA.idt, domainB.real) * lambdaB * lambdaIdt;
-      torch::Tensor idtLossB = functional::l1_loss(domainB.idt, domainA.real) * lambdaA * lambdaIdt;
-      torch::Tensor genLoss = functional::mse_loss(domainA.discriminator->forward(domainB.fake), targetReal) +
-                              functional::mse_loss(domainB.discriminator->forward(domainA.fake), targetReal) +
-                              (functional::l1_loss(domainA.fake, batch.data) * lambdaA) +
-                              (functional::l1_loss(domainB.fake, batch.data) * lambdaB) + idtLossA + idtLossB;
-      std::cout << "Loss(G): " << genLoss.item() << ",\t";
-      genLoss.backward();
+      torch::Tensor totalLoss = idtLossA + idtLossB + genLoss + cycleLoss;
+
+      std::cout << "Loss(G): " << totalLoss.item() << ",\t";
+      totalLoss.backward();
       domainA.optimizerG->step();
       domainB.optimizerG->step();
 
       torch::Tensor fakeA = domainA.getFakeGenerations().detach();
       torch::Tensor fakeB = domainB.getFakeGenerations().detach();
       std::cout << "Loss(D_A): " << domainA.trainDiscriminator(domainB.real, fakeB) << ",\t";
-      std::cout << "Loss(D_B): " << domainB.trainDiscriminator(domainA.real, fakeA) << ",\t";
+      std::cout << "Loss(D_B): " << domainB.trainDiscriminator(domainA.real, fakeA) << " \t";
       std::cout << std::endl;
       domainA.step();
       domainB.step();
     }
+    dataset.reset();
   }
   std::cout << "------------------- Training Complete -------------------" << std::endl;
   std::string exportDir = opts["export-dir"].as<std::string>();
