@@ -21,14 +21,10 @@ class ImageDataset : public torch::data::datasets::Dataset<ImageDataset> {
   std::vector<std::string> images;
 
  public:
-  explicit ImageDataset() {
-    // TODO: Get path from command line
-    std::string path = "../data/";
-
+  explicit ImageDataset(std::string path) {
     for (const auto& entry : fs::directory_iterator(path)) {
       images.push_back(entry.path().string());
     }
-    std::cout << "Found " << images.size() << " images";
   }
 
   torch::data::Example<> get(size_t index) override {
