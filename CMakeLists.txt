@@ -15,6 +15,8 @@ find_package(OpenCV REQUIRED)
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 # Add Program files
+list(APPEND CMAKE_PREFIX_PATH "/opt/libs/cxxopts/include/")
+include_directories("/opt/libs/cxxopts/include/")
 
 add_executable(artium ./src/main.cpp)
 set_property(TARGET artium PROPERTY CXX_STANDARD 20)

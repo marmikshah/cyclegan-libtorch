@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND="noninteractive"
 RUN apt update && \
     apt install -y git vim wget unzip cmake
 
-RUN apt install -y libpng-dev libjpeg-dev libopenexr-dev libtiff-dev libwebp-dev
+RUN apt install -y libpng-dev libjpeg-dev libopenexr-dev libtiff-dev libwebp-dev ffmpeg libsm6 libxext6
 
 WORKDIR /opt/libs/
 
@@ -33,7 +33,7 @@ WORKDIR /opt/libs/
 RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/${OPENCV_VER}.zip 
 RUN unzip opencv.zip && mv opencv-${OPENCV_VER} opencv
 WORKDIR /opt/libs/opencv/build/
-RUN cmake .. && make -j8
+RUN cmake -DWITH_FFMPEG=on .. && make -j8
 
 
 FROM base as cpp
@@ -44,6 +44,9 @@ COPY --from=opencv /opt/libs/opencv/ /opt/libs/opencv/
 
 RUN cd /opt/libs/vision/build/ && make install
 RUN cd /opt/libs/opencv/build/ && make install
+
+RUN wget https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.0.0.zip -O /opt/libs/cxxopts.zip && \
+    unzip cxxopts.zip && mv cxxopts-3.0.0 cxxopts/ && rm cxxopts.zip
 
 ARG USER=marmikshah
 
@@ -58,7 +61,7 @@ RUN apt install -y python3-pip
 RUN pip3 install --upgrade pip && \
     pip3 install torch torchvision opencv-python pillow jupyter
 
-RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
+RUN pip3 install jupyterthemes && jt -t onedork
 
 ARG USER=marmikshah
 
