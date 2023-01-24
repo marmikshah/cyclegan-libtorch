@@ -21,12 +21,12 @@ cv::Mat tensorToMat(torch::Tensor tensor) {
   return output;
 }
 
-torch::Tensor matToTensor(std::string path, cv::Size& size, bool permute = true) {
+torch::Tensor matToTensor(std::string& path, cv::Size& size, bool permute = true) {
   cv::Mat image = cv::imread(path);
   cv::resize(image, image, size, 0, 0, 1);
-  torch::Tensor tensor = torch::from_blob(image.data,  {image.rows, image.cols, image.channels()}, at::kByte);
+  torch::Tensor tensor = torch::from_blob(image.data, {image.rows, image.cols, image.channels()}, at::kByte);
 
-  if(permute) tensor = tensor.permute({2, 0, 1});
+  if (permute) tensor = tensor.permute({2, 0, 1});
   return tensor;
 }
 
@@ -38,16 +38,18 @@ class ImagePool {
    * images.
    */
  private:
-  std::vector<torch::Tensor> pool;
+  std::deque<torch::Tensor> pool;
   int batchSize;
+  int maxPoolSize;
 
  public:
-  ImagePool(int batchSize, int seed = 42) {
+  ImagePool(int batchSize, int seed = 42, int maxPoolSize = 100) {
     /**
      * @param batchSize Size of the returned batch of images.
      * @param seed Optional param to set the random seed
      */
     this->batchSize = batchSize;
+    this->maxPoolSize = maxPoolSize;
     std::cout << "Created ImagePool with seed (" << seed << ")" << std::endl;
     srand(seed);
   }
@@ -64,6 +66,9 @@ class ImagePool {
 
     int totalImages = 0;
     for (int i = 0; i < images.sizes()[0]; i++) {
+      if (pool.size() >= maxPoolSize) {
+        pool.pop_front();
+      }
       if (totalImages < this->batchSize) {
         totalImages += 1;
         batch[i] = images[i];
@@ -72,7 +77,7 @@ class ImagePool {
         if (((double)rand() / (RAND_MAX)) + 1 > 0.5) {
           int randomIndex = rand() % pool.size();
           batch[i] = pool[randomIndex];
-          pool[randomIndex] = images[i];
+          pool.push_back(images[i]);
           totalImages += 1;
         } else {
           batch[i] = images[i];

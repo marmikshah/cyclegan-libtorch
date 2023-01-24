@@ -18,7 +18,6 @@ class Domain {
   torch::optim::Adam* optimizerG;
   torch::optim::Adam* optimizerD;
   ImagePool* pool;
-  std::vector<cv::Mat> generations;
   torch::Tensor fake, rec, real, idt;
 
   Domain(int numBlocks, double lr, int batchSize) {
@@ -63,21 +62,15 @@ class Domain {
 
   torch::Tensor computeCycleLoss(double lambda) { return F::mse_loss(rec, real) * lambda; }
 
-  void step() { generations.push_back(tensorToMat(fake.detach().cpu()[0].clone())); }
+  void exportGeneraton(std::string exportPath) {
+    cv::Mat mat = tensorToMat(fake[0].detach().cpu().clone());
+    cv::imwrite(exportPath, mat);
+  }
 
   void cleanup(std::string exportDir, std::string identifier) {
     torch::serialize::OutputArchive archive;
     generator->save(archive);
     archive.save_to(exportDir + "/gen_" + identifier + ".pt");
-
-    std::string frameExportPath = exportDir + "/" + identifier;
-    std::cout << "Exporting " << generations.size() << " generations" << std::endl;
-
-    for (int i = 0; i < generations.size(); i++) {
-      auto& mat = generations[i];
-      std::string path = frameExportPath + std::to_string(i) + ".png";
-      cv::imwrite(path, mat);
-    }
   }
 };
 
@@ -87,6 +80,7 @@ void train(cxxopts::ParseResult opts) {
   int width = opts["width"].as<int>();
   int height = opts["height"].as<int>();
   int batchSize = opts["batch-size"].as<int>();
+  std::string exportDir = opts["export-dir"].as<std::string>();
 
   Domain domainA(numBlocks, learningRate, batchSize);
   Domain domainB(numBlocks, learningRate, batchSize);
@@ -104,12 +98,17 @@ void train(cxxopts::ParseResult opts) {
   std::cout << "------------------- Training Started -------------------" << std::endl;
 
   for (int epoch = 0; epoch < opts["epochs"].as<int>(); epoch++) {
-    std::cout << "Epoch " << epoch << ":\t";
+    std::cout << "Epoch " << std::format("{:03}", epoch + 1) << ":\t";
 
+    double epochGenLoss = 0.0, epochDALoss = 0.0, epochDBLoss = 0.0;
+    int totalItemsA = 0, totalItemsB = 0;
     while (!dataset.isIterationComplete()) {
       Batch* batch = dataset.getBatch();
+
       domainA.real = batch->imagesA.to(device);
       domainB.real = batch->imagesB.to(device);
+      totalItemsA += domainA.real.sizes()[0];
+      totalItemsB += domainB.real.sizes()[0];
 
       domainB.fake = domainA.generate(domainA.real);  // G_A(A)
       domainA.rec = domainB.generate(domainB.fake);   // G_B(G_A(A))
@@ -131,23 +130,27 @@ void train(cxxopts::ParseResult opts) {
 
       torch::Tensor totalLoss = idtLossA + idtLossB + genLoss + cycleLoss;
 
-      std::cout << "Loss(G): " << totalLoss.item() << ",\t";
+      epochGenLoss += totalLoss.item().toDouble();
       totalLoss.backward();
       domainA.optimizerG->step();
       domainB.optimizerG->step();
 
       torch::Tensor fakeA = domainA.getFakeGenerations().detach();
       torch::Tensor fakeB = domainB.getFakeGenerations().detach();
-      std::cout << "Loss(D_A): " << domainA.trainDiscriminator(domainB.real, fakeB) << ",\t";
-      std::cout << "Loss(D_B): " << domainB.trainDiscriminator(domainA.real, fakeA) << " \t";
-      std::cout << std::endl;
-      domainA.step();
-      domainB.step();
+      epochDALoss += domainA.trainDiscriminator(domainB.real, fakeB).toDouble();
+      epochDBLoss += domainB.trainDiscriminator(domainA.real, fakeA).toDouble();  
     }
+    std::cout << "Loss(G): " << epochGenLoss / (totalItemsA + totalItemsB) << ",\t";
+    std::cout << "Loss(D_A): " << epochDALoss << ",\t";
+    std::cout << "Loss(D_B): " << epochDBLoss << " \t";
+    std::cout << std::endl;
+
+    domainA.exportGeneraton(exportDir + "/GenA-" + std::to_string(epoch) + ".png");
+    domainA.exportGeneraton(exportDir + "/GenA-" + std::to_string(epoch) + ".png");
+
     dataset.reset();
   }
   std::cout << "------------------- Training Complete -------------------" << std::endl;
-  std::string exportDir = opts["export-dir"].as<std::string>();
 
   domainA.cleanup(exportDir, "A");
   domainB.cleanup(exportDir, "B");

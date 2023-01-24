@@ -53,21 +53,23 @@ class ImageDataset {
     int maxSamplesInBatch = min(imagesA.size() - currentIndex, batchSize);
     batch->imagesA = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
     batch->imagesB = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
-    for (int i = 0; i < batchSize; i++, currentIndex++) {
-      if (i >= imagesA.size()) {
+    for (int i = 0; i < maxSamplesInBatch; i++, currentIndex++) {
+      if (currentIndex >= imagesA.size() - 1) {
         iterationComplete = true;
         break;
       }
       batch->imagesA[i] = matToTensor(this->imagesA[currentIndex], this->dims);
+      normalize(batch->imagesA);
 
       int randomIndex = rand() % imagesB.size();
       batch->imagesB[i] = matToTensor(this->imagesB[randomIndex], this->dims);
+      normalize(batch->imagesB);
     }
     return batch;
   }
 
   void reset() {
-    this->currentIndex = -1;
+    this->currentIndex = 0;
     this->iterationComplete = false;
   }
   bool isIterationComplete() { return this->iterationComplete; }
