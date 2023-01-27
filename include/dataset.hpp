@@ -9,70 +9,52 @@
 
 namespace fs = std::filesystem;
 
-void normalize(torch::Tensor& tensor) {
-  torch::Tensor mean = torch::ones({3, 256, 256}) * 0.5;
-  torch::Tensor std = torch::ones({3, 256, 256}) * 0.5;
+class ImageDataset : public torch::data::datasets::Dataset<ImageDataset> {
+  /**
+   * Custom Dataset class to create a tensor for both Domain images.
+   * This Dataset must have the <Stack> transform when creating it.
+   */
 
-  tensor = tensor / 255.0;
-  tensor = (tensor - mean) / std;
-}
-
-struct Batch {
-  torch::Tensor imagesA;
-  torch::Tensor imagesB;
-};
-
-class ImageDataset {
- private:
-  std::vector<std::string> imagesA;
-  std::vector<std::string> imagesB;
+  using Example = torch::data::Example<>;
+  std::vector<std::string> pathsA;
+  std::vector<std::string> pathsB;
   cv::Size dims;
-  int width, height;
-  bool iterationComplete = false;
-  int currentIndex = 0;
-  int batchSize;
+
 
  public:
-  ImageDataset(std::string pathImagesA, std::string pathImagesB, int width, int height, int batchSize) {
-    for (const auto& entry : fs::directory_iterator(pathImagesA)) {
-      imagesA.push_back(entry.path().string());
+  explicit ImageDataset(std::string pathA, std::string pathB, int width, int height) {
+    for (const auto& entry : fs::directory_iterator(pathA)) {
+      pathsA.push_back(entry.path().string());
     }
-    std::cout << "Found " << imagesA.size() << " images for Category A" << std::endl;
-    for (const auto& entry : fs::directory_iterator(pathImagesB)) {
-      imagesB.push_back(entry.path().string());
+    for (const auto& entry : fs::directory_iterator(pathB)) {
+      pathsB.push_back(entry.path().string());
     }
-    std::cout << "Found " << imagesB.size() << " images for Category B" << std::endl;
-    this->dims = cv::Size(width, height);
-    this->width = width;
-    this->height = height;
-    this->batchSize = batchSize;
+    this->dims = cv::Size(height, width);
   }
 
-  Batch* getBatch() {
-    Batch* batch = new Batch();
-    int maxSamplesInBatch = min(imagesA.size() - currentIndex, batchSize);
-    batch->imagesA = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
-    batch->imagesB = torch::zeros({maxSamplesInBatch, 3, this->height, this->width});
-    for (int i = 0; i < maxSamplesInBatch; i++, currentIndex++) {
-      if (currentIndex >= imagesA.size() - 1) {
-        iterationComplete = true;
-        break;
-      }
-      batch->imagesA[i] = matToTensor(this->imagesA[currentIndex], this->dims);
-      normalize(batch->imagesA);
+  Example get(size_t index) override {
+    /**
+     * As C++ Frontend does not provide a way to return Map,
+     * we use a dimension to indicate the domain.
+     *
+     * We add an extra dimention for the domain in this tensor, named D.
+     * Final output would be:
+     * [Domain, Channels, Height, Width].
+     *
+     * The dataloader would stack it into a batch creating a tensor shaped
+     *
+     * We will permute this tensor from ([n, d, c, h ,w]) to ([d, n, c, h ,w])
+     * The `d` domain will always be of size 2.
+     * Assuming d[0] = Domain A and d[1] = Domain B
+     */
 
-      int randomIndex = rand() % imagesB.size();
-      batch->imagesB[i] = matToTensor(this->imagesB[randomIndex], this->dims);
-      normalize(batch->imagesB);
-    }
-    return batch;
+    torch::Tensor sampleA = matToTensor(this->pathsA[index % pathsA.size()], this->dims);
+    torch::Tensor sampleB = matToTensor(this->pathsB[index], this->dims);
+
+    return {sampleA, sampleB};
   }
 
-  void reset() {
-    this->currentIndex = 0;
-    this->iterationComplete = false;
-  }
-  bool isIterationComplete() { return this->iterationComplete; }
+  torch::optional<size_t> size() const override { return max(this->pathsA.size(), this->pathsB.size()); }
 };
 
 #endif
