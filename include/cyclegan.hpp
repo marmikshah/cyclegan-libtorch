@@ -22,7 +22,7 @@ namespace CycleGAN {
         torch::nn::init::constant_(layer->bias, 0.0);
       }
 
-      if (auto *layer = module.as<torch::nn::BatchNorm2dImpl>()) {
+      if (auto *layer = module.as<torch::nn::InstanceNorm2dImpl>()) {
         torch::nn::init::normal_(layer->weight, 1.0, 0.2);
         torch::nn::init::constant_(layer->bias, 0.0);
       }
@@ -49,7 +49,7 @@ namespace CycleGAN {
         multiplierPrev = multiplier;
         multiplier = min(1 << i, 8);
         network->push_back(Conv2d(Conv2dOptions(ndf * multiplierPrev, ndf * multiplier, kernel).stride(2).padding(2)));
-        network->push_back(BatchNorm2d(ndf * multiplier));
+        network->push_back(InstanceNorm2d(ndf * multiplier));
         network->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
       }
 
@@ -73,8 +73,8 @@ namespace CycleGAN {
       /* ========== Encoder ========== */
 
       network->push_back(ReflectionPad2d(3));
-      network->push_back(Conv2d(Conv2dOptions(inChannels, ngf, 7).padding(0).bias(false)));
-      network->push_back(BatchNorm2d(ngf));
+      network->push_back(Conv2d(Conv2dOptions(inChannels, ngf, 7).padding(0).stride(1)));
+      network->push_back(InstanceNorm2d(ngf));
       network->push_back(ReLU(true));
 
       int totalDownsamplingLayers = 2;
@@ -82,8 +82,8 @@ namespace CycleGAN {
       for (int i = 0; i < totalDownsamplingLayers; i++) {
         multiplier = 1 << i;
         int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier * 2;
-        network->push_back(Conv2d(Conv2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).bias(false)));
-        network->push_back(BatchNorm2d(outFeatures));
+        network->push_back(Conv2d(Conv2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1)));
+        network->push_back(InstanceNorm2d(outFeatures));
         network->push_back(ReLU(true));
       }
 
@@ -99,8 +99,8 @@ namespace CycleGAN {
         multiplier = 1 << (totalDownsamplingLayers - i);
         int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier / 2;
         network->push_back(ConvTranspose2d(
-            ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1).bias(false)));
-        network->push_back(BatchNorm2d(outFeatures));
+            ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1)));
+        network->push_back(InstanceNorm2d(outFeatures));
         network->push_back(ReLU(true));
       }
 
@@ -176,6 +176,7 @@ namespace CycleGAN {
       opts = new TrainingOpts(result);
       genA = Models::createGenerator(3, 3, 64, opts->numBlocks);
       genB = Models::createGenerator(3, 3, 64, opts->numBlocks);
+      std::cout<<genA<<std::endl;
       disA = Models::createDiscriminator();
       disB = Models::createDiscriminator();
 
@@ -238,6 +239,7 @@ namespace CycleGAN {
 
           torch::Tensor totalGenLoss = generatorLoss + cycleLossA + cycleLossB + identityLossA + identityLossB;
           assert(totalGenLoss.requires_grad());
+
           totalGenLoss.backward();
           optimGA->step();
           optimGB->step();
@@ -253,7 +255,8 @@ namespace CycleGAN {
 
           fakeImagesB = poolB->getImages(fakeImagesB);
           torch::Tensor disAPredRealB = disA->forward(realImagesB);
-          torch::Tensor disLossA = functional::mse_loss(disAPredRealB, torch::ones_like(disAPredRealB).uniform_(0.8, 1.0).to(device));
+          torch::Tensor disLossA =
+              functional::mse_loss(disAPredRealB, torch::ones_like(disAPredRealB).uniform_(0.8, 1.0).to(device));
           torch::Tensor disAPredFakeB = disA->forward(fakeImagesB.detach());
           disLossA += functional::mse_loss(disAPredFakeB, torch::zeros_like(disAPredFakeB).to(device));
           disLossA *= 0.5;
@@ -261,7 +264,8 @@ namespace CycleGAN {
 
           fakeImagesA = poolA->getImages(fakeImagesA);
           torch::Tensor disBPredRealA = disB->forward(realImagesA);
-          torch::Tensor disLossB = functional::mse_loss(disBPredRealA, torch::ones_like(disBPredRealA).uniform_(0.8, 1.0).to(device));
+          torch::Tensor disLossB =
+              functional::mse_loss(disBPredRealA, torch::ones_like(disBPredRealA).uniform_(0.8, 1.0).to(device));
           torch::Tensor disBPredFakeA = disB->forward(fakeImagesA.detach());
           disLossB += functional::mse_loss(disBPredFakeA, torch::ones_like(disBPredFakeA).to(device));
           disLossB *= 0.5;
