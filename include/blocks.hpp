@@ -16,19 +16,18 @@ struct ResidualBlock : torch::nn::Module {
 
     block->push_back(torch::nn::Conv2d(torch::nn::Conv2dOptions(features, features, kernel)));
     block->push_back(torch::nn::InstanceNorm2d(features));
-    block->push_back(torch::nn::ReLU());
+    block->push_back(torch::nn::ReLU(torch::nn::ReLUOptions(true)));
 
     if (useDropout) block->push_back(torch::nn::Dropout(0.5));
 
     block->push_back(torch::nn::ReflectionPad2d(1));
     block->push_back(torch::nn::Conv2d(torch::nn::Conv2dOptions(features, features, kernel)));
+    block->push_back(torch::nn::InstanceNorm2d(features));
 
     conv = register_module("conv", block);
     conv->to(device);
-    norm = register_module("norm", torch::nn::InstanceNorm2d(features));
-    norm->to(device);
   }
-  torch::Tensor forward(torch::Tensor x) { return torch::relu(this->norm->forward(this->conv->forward(x) + x)); }
+  torch::Tensor forward(torch::Tensor x) { return x + this->conv->forward(x); }
 };
 
 #endif
