@@ -136,7 +136,7 @@ namespace CycleGAN {
         for (const auto &entry : fs::directory_iterator(opts->datasetA)) {
           pathsA.push_back(entry.path().string());
         }
-        for (const auto &entry : fs::directory_iterator(opts->datasetA)) {
+        for (const auto &entry : fs::directory_iterator(opts->datasetB)) {
           pathsB.push_back(entry.path().string());
         }
         this->dims = cv::Size(opts->height, opts->width);
