@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
   // Model Options
   options.add_option(group, {"width", "Model input width", value<int>()->default_value("256")});
   options.add_option(group, {"height", "Model input height", value<int>()->default_value("256")});
-  options.add_option(group, {"r,blocks", "Num resnet blocks", value<int>()->default_value("6")});
+  options.add_option(group, {"r,blocks", "Num resnet blocks", value<int>()->default_value("9")});
 
   // Training Options
   options.add_option(group, {"e,epochs", "Total epochs for training", value<int>()->default_value("500")});
