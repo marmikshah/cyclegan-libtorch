@@ -15,10 +15,10 @@ namespace CycleGAN {
 
     using namespace torch::nn;
     void initWeights(torch::nn::Module &module) {
-      std::cout<<module;
+      std::cout << module;
       torch::NoGradGuard noGrad;
       if (auto *layer = module.as<torch::nn::Conv2dImpl>()) {
-        torch::nn::init::normal_(layer->weight,0.0, 0.2);
+        torch::nn::init::normal_(layer->weight, 0.0, 0.2);
       }
 
       if (auto *layer = module.as<torch::nn::InstanceNorm2dImpl>()) {
@@ -102,8 +102,8 @@ namespace CycleGAN {
       for (int i = 0; i < totalDownsamplingLayers; i++) {
         multiplier = 1 << (totalDownsamplingLayers - i);
         int inFeatures = ngf * multiplier, outFeatures = ngf * multiplier / 2;
-        network->push_back(ConvTranspose2d(
-            ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1)));
+        network->push_back(
+            ConvTranspose2d(ConvTranspose2dOptions(inFeatures, outFeatures, 3).stride(2).padding(1).output_padding(1)));
         network->push_back(InstanceNorm2d(outFeatures));
         network->push_back(ReLU(true));
       }
@@ -179,7 +179,7 @@ namespace CycleGAN {
     Trainer(cxxopts::ParseResult result) {
       opts = new TrainingOpts(result);
       genA = Models::createGenerator(3, 3, 64, opts->numBlocks);
-      genB = Models::createGenerator(3, 3, 64, opts->numBlocks);      
+      genB = Models::createGenerator(3, 3, 64, opts->numBlocks);
       disA = Models::createDiscriminator();
       disB = Models::createDiscriminator();
 
@@ -232,7 +232,7 @@ namespace CycleGAN {
           torch::Tensor disAOnFakeB = disA->forward(fakeImagesB);
           torch::Tensor disBOnFakeA = disB->forward(fakeImagesA);
 
-          torch::Tensor _targetReal = torch::ones_like(disAOnFakeB).uniform_(0.8, 1.0).to(device);
+          torch::Tensor _targetReal = torch::ones_like(disAOnFakeB).to(device);
 
           torch::Tensor generatorLoss =
               functional::mse_loss(disAOnFakeB, _targetReal) + functional::mse_loss(disAOnFakeB, _targetReal);
@@ -258,8 +258,7 @@ namespace CycleGAN {
 
           fakeImagesB = poolB->getImages(fakeImagesB);
           torch::Tensor disAPredRealB = disA->forward(realImagesB);
-          torch::Tensor disLossA =
-              functional::mse_loss(disAPredRealB, torch::ones_like(disAPredRealB).uniform_(0.8, 1.0).to(device));
+          torch::Tensor disLossA = functional::mse_loss(disAPredRealB, torch::ones_like(disAPredRealB).to(device));
           torch::Tensor disAPredFakeB = disA->forward(fakeImagesB.detach());
           disLossA += functional::mse_loss(disAPredFakeB, torch::zeros_like(disAPredFakeB).to(device));
           disLossA *= 0.5;
@@ -267,8 +266,7 @@ namespace CycleGAN {
 
           fakeImagesA = poolA->getImages(fakeImagesA);
           torch::Tensor disBPredRealA = disB->forward(realImagesA);
-          torch::Tensor disLossB =
-              functional::mse_loss(disBPredRealA, torch::ones_like(disBPredRealA).uniform_(0.8, 1.0).to(device));
+          torch::Tensor disLossB = functional::mse_loss(disBPredRealA, torch::ones_like(disBPredRealA).to(device));
           torch::Tensor disBPredFakeA = disB->forward(fakeImagesA.detach());
           disLossB += functional::mse_loss(disBPredFakeA, torch::ones_like(disBPredFakeA).to(device));
           disLossB *= 0.5;

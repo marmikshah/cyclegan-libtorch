@@ -5,7 +5,7 @@
 
 struct TrainingOpts {
   int numBlocks;
-  int learningRate;
+
   int width;
   int height;
   int batchSize;
@@ -15,6 +15,7 @@ struct TrainingOpts {
   double lambdaA;
   double lambdaB;
   double stepSize;
+  double learningRate;
 
   std::string datasetDir;
   std::string datasetA;
