@@ -15,11 +15,10 @@ namespace CycleGAN {
 
     using namespace torch::nn;
     void initWeights(torch::nn::Module &module) {
-    std:
-      // torch::NoGradGuard noGrad;
+      std::cout<<module;
+      torch::NoGradGuard noGrad;
       if (auto *layer = module.as<torch::nn::Conv2dImpl>()) {
-        torch::nn::init::xavier_normal_(layer->weight, 0.2);
-        torch::nn::init::constant_(layer->bias, 0.0);
+        torch::nn::init::normal_(layer->weight,0.0, 0.2);
       }
 
       if (auto *layer = module.as<torch::nn::InstanceNorm2dImpl>()) {
@@ -41,21 +40,26 @@ namespace CycleGAN {
 
       torch::ExpandingArray<2UL> kernel(4);
       int padding = 1;
-      network->push_back(Conv2d(Conv2dOptions(inChannels, ndf, kernel).stride(2)));
-      network->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2)));
+      network->push_back(Conv2d(Conv2dOptions(inChannels, ndf, kernel).stride(2).padding(1)));
+      network->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
       int multiplier = 1, multiplierPrev = 1;
-      for (int i = 1; i <= numLayers; i++) {
+      for (int i = 1; i < numLayers; i++) {
         multiplierPrev = multiplier;
         multiplier = min(1 << i, 8);
-        network->push_back(Conv2d(Conv2dOptions(ndf * multiplierPrev, ndf * multiplier, kernel).stride(2).padding(2)));
+        network->push_back(Conv2d(Conv2dOptions(ndf * multiplierPrev, ndf * multiplier, kernel).stride(2).padding(1)));
         network->push_back(InstanceNorm2d(ndf * multiplier));
         network->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
       }
 
+      multiplierPrev = multiplier;
+      multiplier = min(1 << numLayers, 8);
+      network->push_back(Conv2d(Conv2dOptions(ndf * multiplierPrev, ndf * multiplier, kernel).stride(1).padding(1)));
+      network->push_back(InstanceNorm2d(ndf * multiplier));
+      network->push_back(LeakyReLU(LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+
       network->push_back(Conv2d(Conv2dOptions(ndf * multiplier, 1, kernel).stride(1).padding(padding)));
 
-      // network->apply(initWeights);
       return network;
     }
 
@@ -175,8 +179,7 @@ namespace CycleGAN {
     Trainer(cxxopts::ParseResult result) {
       opts = new TrainingOpts(result);
       genA = Models::createGenerator(3, 3, 64, opts->numBlocks);
-      genB = Models::createGenerator(3, 3, 64, opts->numBlocks);
-      std::cout<<genA<<std::endl;
+      genB = Models::createGenerator(3, 3, 64, opts->numBlocks);      
       disA = Models::createDiscriminator();
       disB = Models::createDiscriminator();
 
