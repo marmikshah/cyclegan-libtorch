@@ -1,7 +1,9 @@
 #include <cxxopts.hpp>
 #include <iostream>
 
-#include "train.hpp"
+#include "dcgan.hpp"
+#include "cyclegan.hpp"
+
 
 int main(int argc, char** argv) {
   using namespace cxxopts;
@@ -25,10 +27,14 @@ int main(int argc, char** argv) {
   options.add_option(group, {"lambda-identity", "Identity loss", value<double>()->default_value("0.5")});
   options.add_option(group, {"lambda-a", "Identity loss A", value<double>()->default_value("10.0")});
   options.add_option(group, {"lambda-b", "Identity loss b", value<double>()->default_value("10.0")});
+  options.add_option(group, {"step-size", "Divide learning rate by", value<double>()->default_value("1.1")});
 
   // Export Options
   options.add_option(group, {"export-dir", "Export training results to", value<std::string>()->default_value("./")});
 
   auto result = options.parse(argc, argv);
-  train(result);
+
+  CycleGAN::Trainer trainer(result);
+  trainer.train();
+  
 }
