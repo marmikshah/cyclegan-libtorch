@@ -14,4 +14,11 @@ void setGrad(torch::nn::Sequential& model, bool grad) {
   }
 }
 
+template <typename T>
+void exportModel(T& model, std::string exportPath) {
+  torch::serialize::OutputArchive archive;
+  model->save(archive);
+  archive.save_to(exportPath);
+}
+
 #endif
