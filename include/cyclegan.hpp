@@ -294,8 +294,7 @@ namespace CycleGAN {
         }
 
         std::cout << "Loss(G): " << epochGenLoss << ",\t";
-        std::cout << "Loss(D): " << epochDLoss << ",\t";
-        std::cout << std::endl;
+        std::cout << "Loss(D): " << epochDLoss << std::endl;
 
         exportModel(genA, exportDirString + "/genAcheckpoint" + strEpoch + ".pt");
         exportModel(genB, exportDirString + "/genBcheckpoint" + strEpoch + ".pt");

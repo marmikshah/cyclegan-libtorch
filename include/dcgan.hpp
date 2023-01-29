@@ -108,15 +108,27 @@ namespace DCGAN {
 
       dis->to(device);
       gen->to(device);
-            std::cout<<gen<<std::endl;
+      std::cout << " -------------------- Generator --------------------" << std::endl;
+      std::cout << gen << std::endl;
 
-      
+      std::cout << " -------------------- Discriminator --------------------" << std::endl;
+      std::cout << dis << std::endl;
     }
 
     void train() {
       using namespace torch::data;
       auto dataset = DataIO::ImageDataset(opts->datasetDir, opts->width, opts->height).map(transforms::Stack<>());
       auto loader = make_data_loader(std::move(dataset), DataLoaderOptions(opts->batchSize));
+
+      namespace fs = std::filesystem;
+
+      fs::path exportDir("./experiment/");
+      std::string exportDirString = exportDir.string();
+      fs::create_directory(exportDir);
+
+      fs::path previewDir("./experiment/previews/");
+      std::string previewDirString = previewDir.string();
+      fs::create_directory(previewDir);
 
       using namespace torch::optim;
       std::cout << "Learning Rate: " << opts->learningRate << std::endl;
@@ -125,6 +137,8 @@ namespace DCGAN {
       std::cout << "------------------- Training Started -------------------" << std::endl;
 
       for (int64_t epoch = 1; epoch <= opts->maxEpochs; ++epoch) {
+        double epochGenLoss = 0.0, epochDisLoss = 0.0;
+        std::string strEpoch = std::to_string(epoch);
         std::cout << "Epoch " << epoch << ":\t";
 
         for (torch::data::Example<>& batch : *loader) {
@@ -145,6 +159,7 @@ namespace DCGAN {
           disLossFake.backward();
 
           torch::Tensor totalDisLoss = disLossFake + disLossReal;
+          epochDisLoss += totalDisLoss.item().toDouble();
           disOptimizer.step();
 
           gen->zero_grad();
@@ -154,8 +169,19 @@ namespace DCGAN {
           genLoss.backward();
           genOptimizer.step();
 
-          cv::imwrite("fake" + std::to_string(epoch) + ".png", tensorToMat(fakeGenerations[0], true));
+          epochGenLoss += genLoss.item().toDouble();
         }
+
+        if (epoch % 5 == 0) {
+          torch::Tensor inputFake = torch::randn({1, opts->latentVector, 1, 1}).to(device);
+          auto output = gen->forward(inputFake.detach());
+          cv::imwrite(previewDirString + "generation" + strEpoch + ".png", tensorToMat(output[0], true));
+
+          exportModel(gen, exportDirString + "/gencheckpoint" + strEpoch + ".pt");
+        }
+
+        std::cout << "Loss(G): " << epochGenLoss << ",\t";
+        std::cout << "Loss(D): " << epochDisLoss << std::endl;
       }
     }
   };

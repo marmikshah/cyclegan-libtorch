@@ -10,6 +10,7 @@ struct TrainingOpts {
   int height;
   int batchSize;
   int maxEpochs;
+  int latentVector;
   std::string exportDir;
   double lambdaIdt;
   double lambdaA;
@@ -36,6 +37,8 @@ struct TrainingOpts {
     datasetB = datasetDir + "/trainB";
     maxEpochs = opts["epochs"].as<int>();
     stepSize = opts["step-size"].as<double>();
+
+    latentVector = opts["latent-vector"].as<int>();
   }
 };
 
