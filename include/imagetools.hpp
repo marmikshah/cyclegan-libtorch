@@ -6,8 +6,8 @@
 #include "globals.hpp"
 
 void normalize(torch::Tensor& tensor) {
-  torch::Tensor mean = torch::ones({3, 256, 256}) * 0.5;
-  torch::Tensor std = torch::ones({3, 256, 256}) * 0.5;
+  torch::Tensor mean = torch::full_like(tensor, 0.5);
+  torch::Tensor std = torch::full_like(tensor, 0.5);
 
   tensor = tensor / 255.0;
   tensor = (tensor - mean) / std;
