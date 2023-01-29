@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  libtorch:
+    container_name: libtorch
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cpp
+    restart: always
+    network_mode: host
+    volumes:
+      - ./:/app/
+    working_dir: /app/
+    command: "sleep infinity"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  pytorch:
+    container_name: pytorch
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: python
+    restart: always
+    network_mode: host
+    volumes:
+      - ./:/app/
+    working_dir: /app/
+    command: "jupyter notebook --no-browser --ip=0.0.0.0 --NotebookApp.token=''"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
