@@ -11,6 +11,7 @@ int main(int argc, char** argv) {
 
   const std::string group = "Artium";
 
+  options.add_option(group, {"trainer", "Which training to do? (cyclegan, dcgan)", value<std::string>()->default_value("cyclegan")});
   options.add_option(group, {"test", "Will perform inference if set to true", value<bool>()->default_value("false")});
 
   options.add_option(group, {"dataset", "Path to dataset", value<std::string>()});
@@ -29,12 +30,24 @@ int main(int argc, char** argv) {
   options.add_option(group, {"lambda-b", "Identity loss b", value<double>()->default_value("10.0")});
   options.add_option(group, {"step-size", "Divide learning rate by", value<double>()->default_value("1.1")});
 
+  options.add_option(group, {"latent-vector", "(nz) Size of the z latent vector", value<int>()->default_value("100")});
+
   // Export Options
   options.add_option(group, {"export-dir", "Export training results to", value<std::string>()->default_value("./")});
 
   auto result = options.parse(argc, argv);
 
-  CycleGAN::Trainer trainer(result);
-  trainer.train();
+  std::string trainer = result["trainer"].as<std::string>();
+  if (trainer == "cyclegan"){ 
+    CycleGAN::Trainer trainer(result);
+    trainer.train();
+  } else if (trainer == "dcgan") {
+    DCGAN::Trainer trainer(result);
+    trainer.train();
+  } else {
+    std::cout<<"Trainer "<<trainer<<" not implemented";
+    exit(-1);
+  }
+  
   
 }
