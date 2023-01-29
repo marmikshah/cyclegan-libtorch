@@ -48,7 +48,7 @@ RUN cd /opt/libs/opencv/build/ && make install
 RUN wget https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.0.0.zip -O /opt/libs/cxxopts.zip && \
     unzip cxxopts.zip && mv cxxopts-3.0.0 cxxopts/ && rm cxxopts.zip
 
-ARG USER=marmikshah
+ARG USER=user
 
 RUN addgroup --gid 1000 ${USER}
 RUN adduser --disabled-password --gecos '' --uid 1000 --gid 1000 ${USER}
@@ -63,7 +63,7 @@ RUN pip3 install --upgrade pip && \
 
 RUN pip3 install jupyterthemes && jt -t onedork
 
-ARG USER=marmikshah
+ARG USER=user
 
 RUN addgroup --gid 1000 ${USER}
 RUN adduser --disabled-password --gecos '' --uid 1000 --gid 1000 ${USER}
