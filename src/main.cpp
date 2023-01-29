@@ -1,9 +1,8 @@
 #include <cxxopts.hpp>
 #include <iostream>
 
-#include "dcgan.hpp"
 #include "cyclegan.hpp"
-
+#include "dcgan.hpp"
 
 int main(int argc, char** argv) {
   using namespace cxxopts;
@@ -11,7 +10,8 @@ int main(int argc, char** argv) {
 
   const std::string group = "Artium";
 
-  options.add_option(group, {"trainer", "Which training to do? (cyclegan, dcgan)", value<std::string>()->default_value("cyclegan")});
+  options.add_option(
+      group, {"trainer", "Which training to do? (cyclegan, dcgan)", value<std::string>()->default_value("cyclegan")});
   options.add_option(group, {"test", "Will perform inference if set to true", value<bool>()->default_value("false")});
 
   options.add_option(group, {"dataset", "Path to dataset", value<std::string>()});
@@ -33,21 +33,19 @@ int main(int argc, char** argv) {
   options.add_option(group, {"latent-vector", "(nz) Size of the z latent vector", value<int>()->default_value("100")});
 
   // Export Options
-  options.add_option(group, {"export-dir", "Export training results to", value<std::string>()->default_value("./")});
+  options.add_option(group, {"export-dir", "Export training results to", value<std::string>()->default_value("experiment/")});
 
   auto result = options.parse(argc, argv);
 
   std::string trainer = result["trainer"].as<std::string>();
-  if (trainer == "cyclegan"){ 
+  if (trainer == "cyclegan") {
     CycleGAN::Trainer trainer(result);
     trainer.train();
   } else if (trainer == "dcgan") {
     DCGAN::Trainer trainer(result);
     trainer.train();
   } else {
-    std::cout<<"Trainer "<<trainer<<" not implemented";
+    std::cout << "Trainer " << trainer << " not implemented";
     exit(-1);
   }
-  
-  
 }

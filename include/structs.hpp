@@ -1,45 +1,54 @@
-#ifndef STRUCTS_HPP
-#define STRUCTS_HPP
+#ifndef ARTIUM_STRUCTS_HPP
+#define ARTIUM_STRUCTS_HPP
 
 #include <cxxopts.hpp>
+#include <filesystem>
+#include <opencv2/opencv.hpp>
 
-struct TrainingOpts {
-  int numBlocks;
+namespace fs = std::filesystem;
 
-  int width;
-  int height;
-  int batchSize;
-  int maxEpochs;
-  int latentVector;
-  std::string exportDir;
-  double lambdaIdt;
-  double lambdaA;
-  double lambdaB;
-  double stepSize;
-  double learningRate;
+struct SettingsBase {
+  /**
+   * Command Line arugments parser.
+  */
+  cxxopts::ParseResult opts;
 
-  std::string datasetDir;
-  std::string datasetA;
-  std::string datasetB;
+  SettingsBase(cxxopts::ParseResult opts) { this->opts = opts; }
 
-  TrainingOpts(cxxopts::ParseResult opts) {
-    numBlocks = opts["blocks"].as<int>();
-    learningRate = opts["learning-rate"].as<double>();
-    width = opts["width"].as<int>();
-    height = opts["height"].as<int>();
-    batchSize = opts["batch-size"].as<int>();
-    exportDir = opts["export-dir"].as<std::string>();
-    lambdaIdt = opts["lambda-identity"].as<double>();
-    lambdaA = opts["lambda-a"].as<double>();
-    lambdaB = opts["lambda-b"].as<double>();
-    datasetDir = opts["dataset"].as<std::string>();
-    datasetA = datasetDir + "/trainA";
-    datasetB = datasetDir + "/trainB";
-    maxEpochs = opts["epochs"].as<int>();
-    stepSize = opts["step-size"].as<double>();
+  /* Path Configurations*/
+  std::string getDatasetDirectory() {
+    std::string datasetDir = opts["dataset"].as<std::string>();
 
-    latentVector = opts["latent-vector"].as<int>();
+    if (!fs::exists(fs::path(datasetDir))) {
+      std::cout << "Directory " << datasetDir << " does not exist" << std::endl;
+      exit(-1);
+    }
+    return datasetDir;
   }
+
+  std::string getExperimentDirectory() {
+    std::string experimentDir = opts["export-dir"].as<std::string>();
+    fs::create_directory(fs::path(experimentDir));
+    return experimentDir;
+  }
+
+  std::string getPreviewsDirectory() {
+    std::string previewDir = getExperimentDirectory() + "/previews/";
+    fs::create_directory(fs::path(previewDir));
+    return previewDir;
+  }
+
+  /* Image Dimensions */
+  int getInputWidth() { return opts["width"].as<int>(); }
+  int getInputHeight() { return opts["height"].as<int>(); }
+  cv::Size getInputSize() { return cv::Size(getInputHeight(), getInputWidth()); }
+
+  /* Training Configurations */
+  double getLearningRate() { return opts["learning-rate"].as<double>(); }
+  int getTotalEpochs() { return opts["epochs"].as<int>(); }
+  int getBatchSize() { return opts["batch-size"].as<int>(); }
+  int getStepInterval() { return opts["step-interval"].as<int>(); }
+  int getStepSize() { return opts["step-size"].as<int>(); }
 };
 
 #endif

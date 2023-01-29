@@ -13,6 +13,11 @@ namespace DCGAN {
 
   using namespace torch::nn;
 
+  struct Settings : SettingsBase {
+    int nz;
+    Settings(cxxopts::ParseResult opts) : SettingsBase(opts) { nz = opts["latent-vector"].as<int>(); }
+  };
+
   namespace DataIO {
     namespace fs = std::filesystem;
 
@@ -25,22 +30,23 @@ namespace DCGAN {
       cv::Size dims;
 
      public:
-      explicit ImageDataset(std::string directory, int width, int height) {
+      explicit ImageDataset(Settings& opts) {
+        std::string directory = opts.getDatasetDirectory();
         for (const auto& entry : fs::directory_iterator(directory)) {
           imagePaths.push_back(entry.path().string());
         }
         std::cout << "Found " << imagePaths.size() << " images @ " << directory << std::endl;
-        this->dims = cv::Size(height, width);
-        std::cout << "Images will be resized to (h, w) => (" << height << ", " << width << ")" << std::endl;
+        dims = opts.getInputSize();
+        std::cout << "Images will be resized to (h, w) => (" << dims << ")" << std::endl;
       }
 
       Example get(size_t index) override {
-        torch::Tensor sample = matToTensor(this->imagePaths[index], this->dims);
+        torch::Tensor sample = matToTensor(imagePaths[index], dims);
 
         return {sample, torch::scalar_tensor(1.0)};
       }
 
-      torch::optional<size_t> size() const override { return this->imagePaths.size(); }
+      torch::optional<size_t> size() const override { return imagePaths.size(); }
     };
   };
 
@@ -98,13 +104,12 @@ namespace DCGAN {
 
   class Trainer {
     Sequential gen, dis;
-    TrainingOpts* opts;
+    Settings opts;
 
    public:
-    Trainer(cxxopts::ParseResult result) {
-      opts = new TrainingOpts(result);
+    Trainer(cxxopts::ParseResult result) : opts(result) {
       dis = Models::createDiscriminator(64);
-      gen = Models::createGenerator(opts->latentVector, 64);
+      gen = Models::createGenerator(opts.nz, 64);
 
       dis->to(device);
       gen->to(device);
@@ -117,26 +122,23 @@ namespace DCGAN {
 
     void train() {
       using namespace torch::data;
-      auto dataset = DataIO::ImageDataset(opts->datasetDir, opts->width, opts->height).map(transforms::Stack<>());
-      auto loader = make_data_loader(std::move(dataset), DataLoaderOptions(opts->batchSize));
+      auto dataset = DataIO::ImageDataset(opts).map(transforms::Stack<>());
+      auto loader = make_data_loader(std::move(dataset), DataLoaderOptions(opts.getBatchSize()));
 
       namespace fs = std::filesystem;
 
-      fs::path exportDir("./experiment/");
-      std::string exportDirString = exportDir.string();
-      fs::create_directory(exportDir);
-
-      fs::path previewDir("./experiment/previews/");
-      std::string previewDirString = previewDir.string();
-      fs::create_directory(previewDir);
+      std::string exportDir = opts.getExperimentDirectory();
+      std::string previewDir = opts.getPreviewsDirectory();
 
       using namespace torch::optim;
-      std::cout << "Learning Rate: " << opts->learningRate << std::endl;
-      Adam genOptimizer(gen->parameters(), AdamOptions(opts->learningRate));
-      Adam disOptimizer(dis->parameters(), AdamOptions(opts->learningRate));
+      double lr = opts.getLearningRate();
+
+      std::cout << "Learning Rate: " << lr << std::endl;
+      Adam genOptimizer(gen->parameters(), AdamOptions(lr));
+      Adam disOptimizer(dis->parameters(), AdamOptions(lr));
       std::cout << "------------------- Training Started -------------------" << std::endl;
 
-      for (int64_t epoch = 1; epoch <= opts->maxEpochs; ++epoch) {
+      for (int64_t epoch = 1; epoch <= opts.getTotalEpochs(); ++epoch) {
         double epochGenLoss = 0.0, epochDisLoss = 0.0;
         std::string strEpoch = std::to_string(epoch);
         std::cout << "Epoch " << epoch << ":\t";
@@ -151,7 +153,7 @@ namespace DCGAN {
           torch::Tensor disLossReal = torch::binary_cross_entropy(predReal, target);
           disLossReal.backward();
 
-          torch::Tensor inputFake = torch::randn({batchSize, opts->latentVector, 1, 1}).to(device);
+          torch::Tensor inputFake = torch::randn({batchSize, opts.nz, 1, 1}).to(device);
           torch::Tensor fakeGenerations = gen->forward(inputFake);
           target.fill_(0.0);
           torch::Tensor predFake = dis->forward(fakeGenerations.detach());
@@ -173,11 +175,11 @@ namespace DCGAN {
         }
 
         if (epoch % 5 == 0) {
-          torch::Tensor inputFake = torch::randn({1, opts->latentVector, 1, 1}).to(device);
+          torch::Tensor inputFake = torch::randn({1, opts.nz, 1, 1}).to(device);
           auto output = gen->forward(inputFake.detach());
-          cv::imwrite(previewDirString + "generation" + strEpoch + ".png", tensorToMat(output[0], true));
+          cv::imwrite(previewDir + "generation" + strEpoch + ".png", tensorToMat(output[0], true));
 
-          exportModel(gen, exportDirString + "/gencheckpoint" + strEpoch + ".pt");
+          exportModel(gen, exportDir + "/gencheckpoint" + strEpoch + ".pt");
         }
 
         std::cout << "Loss(G): " << epochGenLoss << ",\t";

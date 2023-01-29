@@ -11,6 +11,27 @@
 namespace CycleGAN {
 
   using namespace torch::nn;
+
+  struct Settings : SettingsBase {
+    int numResnetBlocks;
+    double lamndaIdentity;
+    double lambdaA;
+    double lambdaB;
+
+    Settings(cxxopts::ParseResult opts) : SettingsBase(opts) {
+      numResnetBlocks = opts["blocks"].as<int>();
+      lamndaIdentity = opts["lambda-identity"].as<double>();
+      lambdaA = opts["lambda-a"].as<double>();
+      lambdaB = opts["lambda-b"].as<double>();
+    }
+
+    /* CycleGAN Specific Settings */
+    int getPoolSize() { return 50; }
+
+    std::string getDomainPath(std::string domain, std::string mode = "train") {
+      return getDatasetDirectory() + "/" + mode + domain + "/";
+    }
+  };
   namespace Models {
     /**
      * ref: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
@@ -135,14 +156,14 @@ namespace CycleGAN {
       cv::Size dims;
 
      public:
-      explicit ImageDataset(TrainingOpts *opts) {
-        for (const auto &entry : fs::directory_iterator(opts->datasetA)) {
+      explicit ImageDataset(Settings opts) {
+        for (const auto &entry : fs::directory_iterator(opts.getDomainPath("A"))) {
           pathsA.push_back(entry.path().string());
         }
-        for (const auto &entry : fs::directory_iterator(opts->datasetB)) {
+        for (const auto &entry : fs::directory_iterator(opts.getDomainPath("B"))) {
           pathsB.push_back(entry.path().string());
         }
-        this->dims = cv::Size(opts->height, opts->width);
+        this->dims = opts.getInputSize();
       }
 
       Example get(size_t index) override {
@@ -168,14 +189,13 @@ namespace CycleGAN {
    private:
     Sequential genA, genB, disA, disB;
     torch::optim::Adam *optimGA, *optimGB, *optimDA, *optimDB;
-    TrainingOpts *opts;
+    Settings opts;
     ImagePool *poolA, *poolB;
 
    public:
-    Trainer(cxxopts::ParseResult result) {
-      opts = new TrainingOpts(result);
-      genA = Models::createGenerator(3, 3, 64, opts->numBlocks);
-      genB = Models::createGenerator(3, 3, 64, opts->numBlocks);
+    Trainer(cxxopts::ParseResult result) : opts(result) {
+      genA = Models::createGenerator(3, 3, 64, opts.numResnetBlocks);
+      genB = Models::createGenerator(3, 3, 64, opts.numResnetBlocks);
       disA = Models::createDiscriminator();
       disB = Models::createDiscriminator();
 
@@ -185,11 +205,12 @@ namespace CycleGAN {
       disB->to(device);
 
       using namespace torch::optim;
-      std::cout << "Optimizer Learning Rate: " << opts->learningRate << std::endl;
-      optimGA = new Adam(genA->parameters(), AdamOptions(opts->learningRate).betas({0.5, 0.999}));
-      optimDA = new Adam(disA->parameters(), AdamOptions(opts->learningRate).betas({0.5, 0.999}));
-      optimGB = new Adam(genB->parameters(), AdamOptions(opts->learningRate).betas({0.5, 0.999}));
-      optimDB = new Adam(disB->parameters(), AdamOptions(opts->learningRate).betas({0.5, 0.999}));
+      double lr = opts.getLearningRate();
+      std::cout << "Optimizer Learning Rate: " << lr << std::endl;
+      optimGA = new Adam(genA->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
+      optimDA = new Adam(disA->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
+      optimGB = new Adam(genB->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
+      optimDB = new Adam(disB->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
       poolA = new ImagePool(50);
       poolB = new ImagePool(50);
     }
@@ -197,22 +218,17 @@ namespace CycleGAN {
     void train() {
       using namespace torch::data;
       auto dataset = DataIO::ImageDataset(opts).map(transforms::Stack<>());
-      auto loader = make_data_loader(std::move(dataset), DataLoaderOptions(opts->batchSize));
+      auto loader = make_data_loader(std::move(dataset), DataLoaderOptions(opts.getBatchSize()));
 
       namespace fs = std::filesystem;
 
-      fs::path exportDir("./experiment/");
-      std::string exportDirString = exportDir.string();
-      fs::create_directory(exportDir);
+      std::string exportDir = opts.getExperimentDirectory();
+      std::string previewDir = opts.getPreviewsDirectory();
 
-      fs::path previewDir("./experiment/previews/");
-      std::string previewDirString = previewDir.string();
-      fs::create_directory(previewDir);
-
-      for (int epoch = 1; epoch <= opts->maxEpochs; epoch++) {
+      for (int epoch = 1; epoch <= opts.getTotalEpochs(); epoch++) {
         double epochGenLoss = 0.0, epochDLoss = 0.0;
         std::string strEpoch = std::to_string(epoch);
-
+        std::cout << "------------------- Training Started -------------------" << std::endl;
         for (torch::data::Example<> &batch : *loader) {
           torch::Tensor realImagesA = batch.data.to(device);
           torch::Tensor realImagesB = batch.target.to(device);
@@ -234,8 +250,10 @@ namespace CycleGAN {
           torch::Tensor identityA = genA->forward(realImagesB);
           torch::Tensor identityB = genB->forward(realImagesA);
 
-          torch::Tensor identityLossA = functional::l1_loss(identityA, realImagesA) * opts->lambdaA;
-          torch::Tensor identityLossB = functional::l1_loss(identityB, realImagesB) * opts->lambdaB;
+          torch::Tensor identityLossA =
+              functional::l1_loss(identityA, realImagesA) * opts.lambdaA * opts.lamndaIdentity;
+          torch::Tensor identityLossB =
+              functional::l1_loss(identityB, realImagesB) * opts.lambdaB * opts.lamndaIdentity;
 
           // Forward pass on D
           torch::Tensor disAOnFakeB = disA->forward(fakeImagesB);
@@ -246,8 +264,8 @@ namespace CycleGAN {
           torch::Tensor generatorLoss =
               functional::mse_loss(disAOnFakeB, _targetReal) + functional::mse_loss(disAOnFakeB, _targetReal);
 
-          torch::Tensor cycleLossA = functional::l1_loss(reconstructedImagesA, realImagesA) * opts->lambdaA;
-          torch::Tensor cycleLossB = functional::l1_loss(reconstructedImagesB, realImagesB) * opts->lambdaB;
+          torch::Tensor cycleLossA = functional::l1_loss(reconstructedImagesA, realImagesA) * opts.lambdaA;
+          torch::Tensor cycleLossB = functional::l1_loss(reconstructedImagesB, realImagesB) * opts.lambdaB;
 
           torch::Tensor totalGenLoss = generatorLoss + cycleLossA + cycleLossB + identityLossA + identityLossB;
           assert(totalGenLoss.requires_grad());
@@ -287,17 +305,17 @@ namespace CycleGAN {
           epochDLoss +=
               ((disLossA.item().toDouble() / fakeImagesB.size(0)) + (disLossB.item().toDouble() / fakeImagesA.size(0)));
 
-          cv::imwrite(previewDirString + "/realA-" + strEpoch + ".png", tensorToMat(realImagesA[0], true));
-          cv::imwrite(previewDirString + "/realB-" + strEpoch + ".png", tensorToMat(realImagesB[0], true));
-          cv::imwrite(previewDirString + "/fakeA-" + strEpoch + ".png", tensorToMat(fakeImagesA[0], true));
-          cv::imwrite(previewDirString + "/fakeB-" + strEpoch + ".png", tensorToMat(fakeImagesB[0], true));
+          cv::imwrite(previewDir + "/realA-" + strEpoch + ".png", tensorToMat(realImagesA[0], true));
+          cv::imwrite(previewDir + "/realB-" + strEpoch + ".png", tensorToMat(realImagesB[0], true));
+          cv::imwrite(previewDir + "/fakeA-" + strEpoch + ".png", tensorToMat(fakeImagesA[0], true));
+          cv::imwrite(previewDir + "/fakeB-" + strEpoch + ".png", tensorToMat(fakeImagesB[0], true));
         }
 
         std::cout << "Loss(G): " << epochGenLoss << ",\t";
         std::cout << "Loss(D): " << epochDLoss << std::endl;
 
-        exportModel(genA, exportDirString + "/genAcheckpoint" + strEpoch + ".pt");
-        exportModel(genB, exportDirString + "/genBcheckpoint" + strEpoch + ".pt");
+        exportModel(genA, exportDir + "/genAcheckpoint" + strEpoch + ".pt");
+        exportModel(genB, exportDir + "/genBcheckpoint" + strEpoch + ".pt");
       }
     }
   };
