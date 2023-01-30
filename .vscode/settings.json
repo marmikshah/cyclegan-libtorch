@@ -85,4 +85,14 @@
     "--rcfile=${workspace}/.pylintrc",
   ],
   "python.analysis.typeCheckingMode": "off",
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "data/": true,
+    "*.mp4": true
+  }
 }
