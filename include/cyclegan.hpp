@@ -158,11 +158,15 @@ namespace CycleGAN {
      public:
       explicit ImageDataset(Settings opts) {
         for (const auto &entry : fs::directory_iterator(opts.getDomainPath("A"))) {
+          if (entry.path().string().size() == 0) continue;
           pathsA.push_back(entry.path().string());
         }
+        std::cout << "Found " << pathsA.size() << " samples for Domain A" << std::endl;
         for (const auto &entry : fs::directory_iterator(opts.getDomainPath("B"))) {
+          if (entry.path().string().size() == 0) continue;
           pathsB.push_back(entry.path().string());
         }
+        std::cout << "Found " << pathsB.size() << " samples for Domain B" << std::endl;
         this->dims = opts.getInputSize();
       }
 
@@ -176,12 +180,12 @@ namespace CycleGAN {
          */
 
         torch::Tensor sampleA = matToTensor(this->pathsA[index % pathsA.size()], this->dims);
-        torch::Tensor sampleB = matToTensor(this->pathsB[index], this->dims);
+        torch::Tensor sampleB = matToTensor(this->pathsB[index % pathsB.size()], this->dims);
 
         return {sampleA, sampleB};
       }
 
-      torch::optional<size_t> size() const override { return max(this->pathsA.size(), this->pathsB.size()); }
+      torch::optional<size_t> size() const override { return min(this->pathsA.size(), this->pathsB.size()); }
     };
   };
 
@@ -211,8 +215,24 @@ namespace CycleGAN {
       optimDA = new Adam(disA->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
       optimGB = new Adam(genB->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
       optimDB = new Adam(disB->parameters(), AdamOptions(lr).betas({0.5, 0.999}));
+
       poolA = new ImagePool(50);
       poolB = new ImagePool(50);
+    }
+
+    double updateLR(torch::optim::Adam &optim) {
+      double updatedLR = -1;
+      for (auto &group : optim.param_groups()) {
+        if (group.has_options()) {
+          auto &options = static_cast<torch::optim::OptimizerOptions &>(group.options());
+          auto lr = options.get_lr();
+          options.set_lr(lr * opts.getStepGamma());
+          if (updatedLR < 0) {
+            updatedLR = options.get_lr();
+          }
+        }
+      }
+      return updatedLR;
     }
 
     void train() {
@@ -225,11 +245,14 @@ namespace CycleGAN {
       std::string exportDir = opts.getExperimentDirectory();
       std::string previewDir = opts.getPreviewsDirectory();
 
+      int totalIterations = 0;
+      std::cout << "------------------- Training Started -------------------" << std::endl;
       for (int epoch = 1; epoch <= opts.getTotalEpochs(); epoch++) {
+        std::cout << "Epoch " << epoch << ":\t";
         double epochGenLoss = 0.0, epochDLoss = 0.0;
         std::string strEpoch = std::to_string(epoch);
-        std::cout << "------------------- Training Started -------------------" << std::endl;
         for (torch::data::Example<> &batch : *loader) {
+          totalIterations += 1;
           torch::Tensor realImagesA = batch.data.to(device);
           torch::Tensor realImagesB = batch.target.to(device);
 
@@ -309,6 +332,13 @@ namespace CycleGAN {
           cv::imwrite(previewDir + "/realB-" + strEpoch + ".png", tensorToMat(realImagesB[0], true));
           cv::imwrite(previewDir + "/fakeA-" + strEpoch + ".png", tensorToMat(fakeImagesA[0], true));
           cv::imwrite(previewDir + "/fakeB-" + strEpoch + ".png", tensorToMat(fakeImagesB[0], true));
+
+          if (totalIterations % opts.getStepSize() == 0) {
+            std::cout << "Updated LR:" << updateLR(*optimGA) << "\t";
+            updateLR(*optimGB);
+            updateLR(*optimDA);
+            updateLR(*optimDB);
+          }
         }
 
         std::cout << "Loss(G): " << epochGenLoss << ",\t";

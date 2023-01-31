@@ -47,7 +47,7 @@ struct SettingsBase {
   double getLearningRate() { return opts["learning-rate"].as<double>(); }
   int getTotalEpochs() { return opts["epochs"].as<int>(); }
   int getBatchSize() { return opts["batch-size"].as<int>(); }
-  int getStepInterval() { return opts["step-interval"].as<int>(); }
+  double getStepGamma() { return opts["step-gamma"].as<double>(); }
   int getStepSize() { return opts["step-size"].as<int>(); }
 };
 

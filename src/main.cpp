@@ -28,7 +28,8 @@ int main(int argc, char** argv) {
   options.add_option(group, {"lambda-identity", "Identity loss", value<double>()->default_value("0.5")});
   options.add_option(group, {"lambda-a", "Identity loss A", value<double>()->default_value("10.0")});
   options.add_option(group, {"lambda-b", "Identity loss b", value<double>()->default_value("10.0")});
-  options.add_option(group, {"step-size", "Divide learning rate by", value<double>()->default_value("1.1")});
+  options.add_option(group, {"step-size", "Divide learning rate by", value<int>()->default_value("1000")});
+  options.add_option(group, {"step-gamma", "Divide learning rate by", value<double>()->default_value("0.9")});
 
   options.add_option(group, {"latent-vector", "(nz) Size of the z latent vector", value<int>()->default_value("100")});
 
